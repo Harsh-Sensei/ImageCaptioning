@@ -11,6 +11,9 @@ import torchvision.models as models
 from CustomDatasets import *  # Datasets involving captions
 import numpy as np
 import spacy
+import random
+
+torch.autograd.set_detect_anomaly(True)
 
 # Device setup for runtime
 device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
@@ -41,13 +44,18 @@ class TextEncoder(nn.Module):
         self.linearProject = nn.Linear(self.hidden_size, output_dim)
 
     def forward(self, x):
+        # dim x = batch_size, seq_len
+        # print("x dim")
+        # print(x.shape)
         x = self.dropout(self.embed(x))
+        # print("x dim embed")
+        # print(x.shape)
         init_hidden_state = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
         init_cell_state = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
         outputs, (hidden_states, _) = self.encoderLSTM(x, (init_hidden_state, init_cell_state))
         # dim outputs = (batch_size, sequence_len, hidden_size)
 
-        encoded_text = self.linearProject(outputs[:, -1, :])
+        encoded_text = self.linearProject(outputs.sum(dim=1))
         # print("outputs.shape")
         # print(outputs.shape)
 
@@ -55,14 +63,17 @@ class TextEncoder(nn.Module):
 
 
 class TextDecoder(nn.Module):
-    def __init__(self, feature_dim=1000, embedding_dim=300, vocab_size=1000, num_layers=2, dropout=0.5):
+    def __init__(self, embed, feature_dim=1000, embedding_dim=300, vocab_size=1000, num_layers=2, dropout=0.5,
+                 teacher_force_ratio=0.5):
         super(TextDecoder, self).__init__()
         self.hidden_size = vocab_size
         self.vocab_size = vocab_size
         self.num_layers = num_layers
         self.feature_dim = feature_dim
+        self.embed = embed
+        self.teacher_force_ratio = teacher_force_ratio
         # Decoder LSTM
-        self.decoderLSTM = nn.LSTM(input_size=self.feature_dim,
+        self.decoderLSTM = nn.LSTM(input_size=self.feature_dim+self.vocab_size,
                                    hidden_size=self.vocab_size,
                                    num_layers=self.num_layers,
                                    dropout=dropout,
@@ -79,22 +90,41 @@ class TextDecoder(nn.Module):
         cell = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device=device)
 
         # dim features = (batch_size, feature_dim)
-        features = features.unsqueeze(1)
+        # print("features.shape")
+        # print(features.shape)
 
-        for t in range(target_len):
-            output, (hidden, cell) = self.decoderLSTM(features, (hidden, cell))
-            if t == 0:
-                pass
-                # print("output_shape")
-                # print(output.shape)
+        input = captions[:, 0]
+        input_onehot = F.one_hot(input, num_classes=vocab_size)
+
+        # print("input_onehot.shape")
+        # print(input_onehot.shape)
+        input_cat = torch.cat((features, input_onehot), dim=1)
+        input_cat = input_cat.unsqueeze(1)
+
+        for t in range(1, target_len):
+            output, (hidden, cell) = self.decoderLSTM(input_cat, (hidden, cell))
             outputs[:, t, :] = output.squeeze(1)
+            # output dim = (batch_size, vocab_size)
+            outputx = output.squeeze(1).clone().detach()
+
+            if random.random() < self.teacher_force_ratio:
+                captions_onehot = F.one_hot(captions[:, t], num_classes=vocab_size)
+                next_input = torch.cat((features, captions_onehot), dim=1)
+            else:
+                outputx = outputx.argmax(dim=1)
+                output_onehot = F.one_hot(outputx, num_classes=vocab_size)
+                next_input = torch.cat((features, output_onehot), dim=1)
+
+            next_input.unsqueeze_(1)
+            input_cat = next_input.clone().detach()
 
         return outputs
 
 
 class TextEncoderDecoder(nn.Module):
 
-    def __init__(self, feature_dim, embedding_dim, en_hidden_size, en_num_layers, de_num_layers, vocab_size, p=0.5):
+    def __init__(self, feature_dim, embedding_dim, en_hidden_size, en_num_layers, de_num_layers, vocab_size, p=0.5,
+                 teacher_force_ratio=0.5):
         super(TextEncoderDecoder, self).__init__()
 
         self.encoder = TextEncoder(embedding_dim=embedding_dim,
@@ -104,11 +134,13 @@ class TextEncoderDecoder(nn.Module):
                                    vocab_size=vocab_size,
                                    p=p)
 
-        self.decoder = TextDecoder(feature_dim=feature_dim,
+        self.decoder = TextDecoder(embed=self.encoder.embed,
+                                   feature_dim=feature_dim,
                                    embedding_dim=embedding_dim,
                                    vocab_size=vocab_size,
                                    num_layers=de_num_layers,
-                                   dropout=p)
+                                   dropout=p,
+                                   teacher_force_ratio=teacher_force_ratio)
 
     def forward(self, x):
         # dim x = (batch_size, sequence_len)
@@ -117,6 +149,19 @@ class TextEncoderDecoder(nn.Module):
         prediction = self.decoder(features, x)
 
         return prediction
+
+def test(dataloader, model, device):
+    input, _ = next(iter(dataloader))
+    input = input[3]
+    input = input.unsqueeze(0).to(device)
+    output = model(input)
+    output = output.squeeze(0)
+    output = output.argmax(1)
+
+    print(input)
+    print(output)
+
+    return None
 
 
 if __name__ == "__main__":
@@ -134,6 +179,7 @@ if __name__ == "__main__":
     embedding_dim = 300
     vocab_size = None  # to be defined after datasets are loaded
     dropout_p = 0.5
+    teacher_force_ratio = 0.5
 
     # Initializing dataloader
     UCM_train_loader, UCM_test_loader, pad_idx, vocab_size = getTextUCMDataLoader(batch_size=batch_size)
@@ -144,7 +190,8 @@ if __name__ == "__main__":
                                en_num_layers=en_num_layers,
                                de_num_layers=de_num_layers,
                                vocab_size=vocab_size,
-                               p=dropout_p).to(device=device)
+                               p=dropout_p,
+                               teacher_force_ratio=teacher_force_ratio).to(device=device)
 
     criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -156,11 +203,16 @@ if __name__ == "__main__":
         for (data, ground_truth) in UCM_train_loader:
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
+
             output = model(data)
             output = output.permute(0, 2, 1).to(device=device)
+
             loss = criterion(output, ground_truth)
+
             optimizer.zero_grad()
             loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+
             optimizer.step()
 
         print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}')
