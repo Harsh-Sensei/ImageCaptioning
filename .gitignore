@@ -1,2 +1,3 @@
 dataset/*
 e_resnet18_d_custom_UCM.pth.tar
+*.pth.tar

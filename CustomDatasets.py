@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader, Dataset
 import json
 import spacy
 
-spacy_eng = spacy.load("en_core_web_lg")
+spacy_eng = spacy.load("en_core_web_sm")
 
 
 class Vocabulary:
@@ -192,7 +192,7 @@ def getTextUCMDataLoader(batch_size=32):
     TrainLoader = DataLoader(UCM_train_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx))
     TestLoader = DataLoader(UCM_test_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx))
 
-    return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__()
+    return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__(),dataset.vocab.itos
 
 
 if __name__ == "__main__":
