@@ -189,8 +189,9 @@ def getTextUCMDataLoader(batch_size=32):
                                                                  int(dataset.__len__() * 0.8)])
     print(dataset.vocab.itos)
     pad_idx = dataset.vocab.stoi["<PAD>"]
-    TrainLoader = DataLoader(UCM_train_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx))
-    TestLoader = DataLoader(UCM_test_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx))
+    TrainLoader = DataLoader(UCM_train_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx),
+                             shuffle=True)
+    TestLoader = DataLoader(UCM_test_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx), shuffle=True)
 
     return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__(),dataset.vocab.itos
 
