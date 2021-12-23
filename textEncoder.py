@@ -11,15 +11,11 @@ import torchvision.models as models
 from CustomDatasets import *  # Datasets involving captions
 import numpy as np
 import spacy
-
-from torchtext.data.metrics import bleu_score
-
 import random
 
 torch.seed(73)
 
 torch.autograd.set_detect_anomaly(True)
-
 
 # Device setup for runtime
 device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
@@ -264,9 +260,7 @@ if __name__ == "__main__":
     # Hyper parameters for learning
     learning_rate = 0.001
     batch_size = 32
-
     num_epochs = 20
-
 
     # Hyper parameters for network
     feature_dim = 1000
@@ -280,8 +274,8 @@ if __name__ == "__main__":
     teacher_force_ratio = 0.5
 
     # Initializing dataloader
-    UCM_train_loader, UCM_test_loader, pad_idx, vocab_size,dicti = getTextUCMDataLoader(batch_size=batch_size)
-    #Dimension batch, sequence
+    UCM_train_loader, UCM_test_loader, pad_idx, vocab_size = getTextUCMDataLoader(batch_size=batch_size)
+
     model = TextEncoderDecoder(feature_dim=feature_dim,
                                embedding_dim=embedding_dim,
                                en_hidden_size=en_hidden_size,
@@ -297,35 +291,6 @@ if __name__ == "__main__":
     loss_vector = []
     outputs = []
 
-
-    def tostring(vectr):
-        s = []
-        string = []
-        for v in vectr:
-            s.append(v.item())
-            if dicti[v.item()] == "<EOS>":
-                break
-            string.append(dicti[v.item()])
-        return string[1:]
-
-
-    score = 0
-
-
-    def bleu(vectr):
-        ref = tostring(vectr)[1:]
-        v = vectr.unsqueeze(0)
-        x = model(v)
-        x = x.argmax(2)
-        x = x.squeeze()
-        hyp = tostring(x)[1:]
-        # hyp=["I","am","Shrey","bav","adnsk","dalnds"]
-        # ref=["I","am","Shrey","bav","adnsk","dalnds"]
-        print(hyp, ref)
-        score = bleu_score([hyp], [[ref]],max_n=1,weights=[1])
-        return score
-
-    vector=[]
     for epoch in range(num_epochs):
         for (data, ground_truth) in UCM_train_loader:
             data = data.to(device=device)
@@ -341,28 +306,8 @@ if __name__ == "__main__":
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
 
             optimizer.step()
-            vector=data[3]
 
-        score=bleu(vector)
-        print(score)
         print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}')
         outputs.append([epoch, data, output, loss.item()])
 
-
-
-    def testing(data):
-        strs=[]
-        for d in data:
-            strs.append([tostring(d)])
-        data=data.to(device=device)
-        output=model(data)
-        output=output.argmax(2)
-        output_str=[]
-        for o in output:
-            output_str.append(tostring(o))
-        score=bleu_score(output_str,strs)
-        print(score)
-        return score
-
     test(UCM_train_loader, model, device)
-
