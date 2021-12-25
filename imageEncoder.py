@@ -9,7 +9,7 @@ import torchvision.datasets as datasets  # Standard datasets, has COCO
 import torchvision.transforms as transforms  # transformations on dataset
 import torchvision.models as models
 from PIL import Image
-from CustomDatasets import Sydney_Captions, UCM_Captions
+from CustomDatasets import UCM_Captions
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -137,23 +137,23 @@ if __name__ == "__main__":
 
     # loading the UCM_Captions and Sydney_Captions datasets
     UCM_dataset = UCM_Captions(transform=preprocess)
-    Sydney_dataset = Sydney_Captions(transform=preprocess)
+    # Sydney_dataset = Sydney_Captions(transform=preprocess)
 
     UCM_len = UCM_dataset.__len__()
-    Sydney_len = Sydney_dataset.__len__()
+    # Sydney_len = Sydney_dataset.__len__()
 
     # Setting up training and testing data
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(UCM_dataset,
                                                                 [int(UCM_len * 0.8), UCM_len - int(UCM_len * 0.8)])
-    Sydney_train_set, Sydney_test_set = torch.utils.data.random_split(Sydney_dataset, [int(Sydney_len * 0.8),
-                                                                                       Sydney_len - int(
-                                                                                           Sydney_len * 0.8)])
+    # Sydney_train_set, Sydney_test_set = torch.utils.data.random_split(Sydney_dataset, [int(Sydney_len * 0.8),
+    #                                                                                    Sydney_len - int(
+    #                                                                                        Sydney_len * 0.8)])
 
     # Initializing dataloader
     UCM_train_loader = DataLoader(dataset=UCM_train_set, batch_size=batch_size, shuffle=True)
     UCM_test_loader = DataLoader(dataset=UCM_test_set, batch_size=batch_size, shuffle=True)
-    Sydney_train_loader = DataLoader(dataset=Sydney_train_set, batch_size=batch_size, shuffle=True)
-    Sydney_test_loader = DataLoader(dataset=Sydney_test_set, batch_size=batch_size, shuffle=True)
+    # Sydney_train_loader = DataLoader(dataset=Sydney_train_set, batch_size=batch_size, shuffle=True)
+    # Sydney_test_loader = DataLoader(dataset=Sydney_test_set, batch_size=batch_size, shuffle=True)
 
     model = ImageEncoderDecoder()
     model.to(device)

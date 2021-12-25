@@ -10,6 +10,8 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader, Dataset
 import json
 import spacy
+import random
+random.seed(17)
 
 spacy_eng = spacy.load("en_core_web_lg")
 
@@ -56,12 +58,13 @@ class Vocabulary:
 
 class UCM_Captions(Dataset):
 
-    def __init__(self, transform=None, ret_type="image-image", freq_threshold=2):
+    def __init__(self, transform=None, ret_type="image-image", type="one-one",freq_threshold=2):
         self.transform = transform
         self.ret_type = ret_type
         self.root_dir = "./dataset/UCM_Captions/UCM_captions/imgs"
         self.num_captions_per_img, self.meta_data = self.getMetaData()
         self.image_names = list(self.meta_data.keys())
+        self.type = type
 
         # Example of each elem in captions
         # [{'tokens': ['There', 'is', 'a', 'piece', 'of', 'farmland'], 'raw': 'There is a piece of farmland .',
@@ -87,8 +90,13 @@ class UCM_Captions(Dataset):
         return captions_per_img, result
 
     def __len__(self):
-        if self.ret_type == "image-image" or self.ret_type == "image-caption":
+        if self.ret_type == "image-image":
             return len(self.meta_data)
+        elif self.ret_type == "image-caption":
+            if self.type == "one-one":
+                return len(self.meta_data)
+            elif self.type == "one-many":
+                return self.num_captions_per_img * len(self.meta_data)
         else:
             return self.num_captions_per_img * len(self.meta_data)
 
@@ -98,26 +106,39 @@ class UCM_Captions(Dataset):
             img_path = os.path.join(self.root_dir, self.image_names[index])
             image = Image.open(img_path)
             y_label = self.captions[index]
+            if self.transform:
+                image = self.transform(image)
+            return image, image
+
         elif self.ret_type == "image-caption":
-            y_label = self.captions[index]
+            if self.type == "many-one":
+                img_path = os.path.join(self.root_dir, self.image_names[int(index) // int(self.num_captions_per_img)])
+                image = Image.open(img_path)
+                if self.transform:
+                    image = self.transform(image)
+
+                y_label = self.captions[int(index) // int(self.num_captions_per_img)]
+                y_label = y_label[int(index) % int(self.num_captions_per_img)]['raw']
+                y_label = self.numericalize_caption(y_label)
+                y_label = torch.tensor(y_label)
+                return image, y_label
+            elif self.type == "one-one":
+                img_path = os.path.join(self.root_dir, self.image_names[int(index)])
+                image = Image.open(img_path)
+                if self.transform:
+                    image = self.transform(image)
+
+                y_label = self.captions[int(index)]
+                y_label = y_label[random.randint(0, 4)]['raw']
+                y_label = self.numericalize_caption(y_label)
+                y_label = torch.tensor(y_label)
+            return image, y_label
+
         else:
             y_label = self.captions[int(index) // int(self.num_captions_per_img)]
             y_label = y_label[int(index) % int(self.num_captions_per_img)]['raw']
             y_label = self.numericalize_caption(y_label)
-            # print("y_label")
-            # print(y_label)
             y_label = torch.tensor(y_label)
-
-
-
-        if self.transform:
-            image = self.transform(image)
-
-        if self.ret_type == "image-image":
-            return image, image
-        elif self.ret_type == "image-caption":
-            return image, y_label
-        elif self.ret_type == "caption-caption":
             return y_label, y_label
 
     def numericalize_caption(self, caption):
@@ -135,41 +156,41 @@ class UCM_Captions(Dataset):
         return result
 
 
-class Sydney_Captions(Dataset):
-    def __init__(self, transform=None, ret_type="image-image"):
-        self.transform = transform
-        self.ret_type = ret_type
-        self.root_dir = "./dataset/Sydney_Captions/Sydney_captions/imgs"
-        self.meta_data = self.getMetaData()
-        self.image_names = list(self.meta_data.keys())
-        self.captions = list(self.meta_data.values())
-
-    def getMetaData(self):
-        data_info = open(r"./dataset/Sydney_Captions/Sydney_captions/dataset.json")
-        data_info = json.load(data_info)['images']
-
-        result = {}
-        for elem in data_info:
-            result[str(elem['filename'])] = elem['sentences']
-        return result
-
-    def __len__(self):
-        return len(self.meta_data)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.root_dir, self.image_names[index])
-        image = Image.open(img_path)
-        y_label = self.captions[index]
-
-        if self.transform:
-            image = self.transform(image)
-
-        if self.ret_type == "image-image":
-            return (image, image)
-        elif self.ret_type == "image-caption":
-            return (image, y_label)
-        elif self.ret_type == "caption-caption":
-            return (y_label, y_label)
+# class Sydney_Captions(Dataset):
+#     def __init__(self, transform=None, ret_type="image-image"):
+#         self.transform = transform
+#         self.ret_type = ret_type
+#         self.root_dir = "./dataset/Sydney_Captions/Sydney_captions/imgs"
+#         self.meta_data = self.getMetaData()
+#         self.image_names = list(self.meta_data.keys())
+#         self.captions = list(self.meta_data.values())
+#
+#     def getMetaData(self):
+#         data_info = open(r"./dataset/Sydney_Captions/Sydney_captions/dataset.json")
+#         data_info = json.load(data_info)['images']
+#
+#         result = {}
+#         for elem in data_info:
+#             result[str(elem['filename'])] = elem['sentences']
+#         return result
+#
+#     def __len__(self):
+#         return len(self.meta_data)
+#
+#     def __getitem__(self, index):
+#         img_path = os.path.join(self.root_dir, self.image_names[index])
+#         image = Image.open(img_path)
+#         y_label = self.captions[index]
+#
+#         if self.transform:
+#             image = self.transform(image)
+#
+#         if self.ret_type == "image-image":
+#             return (image, image)
+#         elif self.ret_type == "image-caption":
+#             return (image, y_label)
+#         elif self.ret_type == "caption-caption":
+#             return (y_label, y_label)
 
 
 class AuxPadClass:
@@ -177,13 +198,28 @@ class AuxPadClass:
         self.pad_idx = pad_idx
 
     def __call__(self, batch):
-        items = [item[0] for item in batch]
-        input = pad_sequence(items, batch_first=True, padding_value=self.pad_idx)
-        return input, input
+        text_items = [item[1] for item in batch]
+        image_items = [item[0] for item in batch]
+        text_items = pad_sequence(text_items, batch_first=True, padding_value=self.pad_idx)
+        return torch.stack(image_items), text_items
 
 
 def getTextUCMDataLoader(batch_size=32):
     dataset = UCM_Captions(transform=None, ret_type="caption-caption")
+    UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
+                                                                [int(dataset.__len__() * 0.8), dataset.__len__() -
+                                                                 int(dataset.__len__() * 0.8)])
+    print(dataset.vocab.itos)
+    pad_idx = dataset.vocab.stoi["<PAD>"]
+    TrainLoader = DataLoader(UCM_train_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx),
+                             shuffle=True)
+    TestLoader = DataLoader(UCM_test_set, batch_size=batch_size, collate_fn=AuxPadClass(pad_idx=pad_idx), shuffle=True)
+
+    return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__()
+
+
+def getImageTextUCMDataLoader(batch_size=32, transform=None, type="one-one"):
+    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type="one-one")
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])

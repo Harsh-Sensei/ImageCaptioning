@@ -13,7 +13,7 @@ import numpy as np
 import spacy
 import random
 
-torch.seed(73)
+torch.manual_seed(73)
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -46,12 +46,6 @@ class TextEncoder(nn.Module):
         self.linearProject = nn.Linear(self.hidden_size, output_dim)
 
     def forward(self, x):
-        # dim x = batch_size, seq_len
-        # print("x dim")
-        # print(x.shape)
-        #x = self.dropout(self.embed(x))
-        # print("x dim embed")
-        # print(x.shape)
 
         x_onehot = F.one_hot(x, num_classes=self.vocab_size)
 
@@ -213,11 +207,12 @@ def test(dataloader, model, device, i=3):
 
     return None
 
+
 def infer(model, dataloader, i=5):
     x, _ = next(iter(dataloader))
     x = x[i]
     x = x.unsqueeze(0)
-    x=x.to(device)
+    x = x.to(device)
     features, hidden, cell = model.encoder(x)
     max_target_len = 30
     target_vocab_size = model.encoder.vocab_size
@@ -249,11 +244,13 @@ def infer(model, dataloader, i=5):
     print(outputs.argmax(dim=2))
     return None
 
+
 def save_model(model, filename="./saved_models/e_resnet18_d_custom_UCM.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
 
     return None
+
 
 if __name__ == "__main__":
 
