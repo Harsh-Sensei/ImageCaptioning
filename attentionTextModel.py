@@ -14,6 +14,7 @@ import spacy
 import random
 
 torch.manual_seed(73)
+random.seed(73)
 
 torch.autograd.set_detect_anomaly(True)
 
@@ -46,7 +47,6 @@ class TextEncoder(nn.Module):
         self.linearProject = nn.Linear(self.hidden_size, output_dim)
 
     def forward(self, x):
-
         x_onehot = F.one_hot(x, num_classes=self.vocab_size)
 
         init_hidden_state = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
@@ -62,13 +62,14 @@ class TextEncoder(nn.Module):
 
 
 class TextDecoder(nn.Module):
-    def __init__(self, feature_dim=1000, vocab_size=1000, num_layers=2, dropout=0.5,
+    def __init__(self, embed, feature_dim=1000, embedding_dim=300, vocab_size=1000, num_layers=2, dropout=0.5,
                  hidden_size=1024, teacher_force_ratio=0.5):
         super(TextDecoder, self).__init__()
         self.hidden_size = vocab_size
         self.vocab_size = vocab_size
         self.num_layers = num_layers
         self.feature_dim = feature_dim
+        self.embed = embed
         self.hidden_size = hidden_size
         self.teacher_force_ratio = teacher_force_ratio
         # Decoder LSTM
@@ -81,8 +82,8 @@ class TextDecoder(nn.Module):
         self.linear = nn.Linear(feature_dim, vocab_size)
         self.reverse_linear = nn.Linear(hidden_size, vocab_size)
 
-    def forward(self, hidden, cell, captions):
-        batch_size = captions.shape[0]
+    def forward(self, features, hidden, cell, captions):
+        batch_size = features.shape[0]
         target_len = captions.shape[1]
         target_vocab_size = self.vocab_size
 
@@ -90,6 +91,8 @@ class TextDecoder(nn.Module):
 
         # hidden = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device=device)
         # cell = torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device=device)
+
+        projected_features = self.linear(features)
 
         # dim features = (batch_size, feature_dim)
         # print("features.shape")
@@ -106,10 +109,10 @@ class TextDecoder(nn.Module):
 
         for t in range(1, target_len):
             output, (hidden, cell) = self.decoderLSTM(input_onehot.float(), (hidden, cell))
-            
+
             output = self.reverse_linear(output.squeeze(1))
             outputs[:, t, :] = output
-                # output dim = (batch_size, vocab_size)
+            # output dim = (batch_size, vocab_size)
             # outputx = output.squeeze(1).clone().detach()
 
             if random.random() < self.teacher_force_ratio:
@@ -122,15 +125,16 @@ class TextDecoder(nn.Module):
 
         return outputs
 
-    def inference(self, hidden, cell):
+    def inference(self, features, hidden, cell):
         max_target_len = 30
         target_vocab_size = self.vocab_size
 
         outputs = torch.zeros(1, max_target_len, target_vocab_size)
+        projected_features = self.linear(features)
 
         input = torch.tensor([1])
         input_onehot = F.one_hot(input, num_classes=self.vocab_size)
-        #dim input_onehot = 1, vocab_size
+        # dim input_onehot = 1, vocab_size
         outputs[:, 0, :] = input_onehot.float()
 
         input_onehot = input_onehot.unsqueeze(1)
@@ -138,7 +142,7 @@ class TextDecoder(nn.Module):
 
         for t in range(1, max_target_len):
             output, (hidden, cell) = self.decoderLSTM(input_onehot.float().to(device), (hidden, cell))
-            #dim output = 1, 1, hidden_size
+            # dim output = 1, 1, hidden_size
             output = self.reverse_linear(output.squeeze(1))
             # dim output = 1, 1, vocab_size
 
@@ -158,7 +162,7 @@ class TextDecoder(nn.Module):
 class TextEncoderDecoder(nn.Module):
 
     def __init__(self, feature_dim, embedding_dim, en_hidden_size, num_layers,
-                 de_hidden_size,vocab_size, p=0.5, teacher_force_ratio=0.5):
+                 de_hidden_size, vocab_size, p=0.5, teacher_force_ratio=0.5):
         super(TextEncoderDecoder, self).__init__()
 
         self.encoder = TextEncoder(embedding_dim=embedding_dim,
@@ -168,7 +172,9 @@ class TextEncoderDecoder(nn.Module):
                                    vocab_size=vocab_size,
                                    p=p)
 
-        self.decoder = TextDecoder(feature_dim=feature_dim,
+        self.decoder = TextDecoder(embed=self.encoder.embed,
+                                   feature_dim=feature_dim,
+                                   embedding_dim=embedding_dim,
                                    vocab_size=vocab_size,
                                    num_layers=num_layers,
                                    hidden_size=de_hidden_size,
@@ -179,15 +185,16 @@ class TextEncoderDecoder(nn.Module):
         # dim x = (batch_size, sequence_len)
 
         features, hidden, cell = self.encoder(x)
-        prediction = self.decoder(hidden, cell, x)
+        prediction = self.decoder(features, hidden, cell, x)
 
         return prediction
 
     def inference(self, x):
         features, hidden, cell = self.encoder(x)
-        prediction = self.decoder.inference(hidden, cell)
+        prediction = self.decoder.inference(features, hidden, cell)
 
         return prediction
+
 
 def test(dataloader, model, device, i=3):
     input, _ = next(iter(dataloader))

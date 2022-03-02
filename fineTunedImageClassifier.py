@@ -18,35 +18,24 @@ torch.manual_seed(17)
 p = torch.ones(1, 3, 256, 256)
 
 
-class MultiLabelImageEncoder(nn.Module):
+class ResnetImageEncoder(nn.Module):
     def __init__(self, num_classes):
-        super(MultiLabelImageEncoder, self).__init__()
-        self.num_classes = num_classes
-        self.conv1a = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3, 3), stride=(1, 1))
-        self.conv1b = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=(3, 3), stride=(1, 1))
-        self.maxpool = nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv2a = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(3, 3), stride=(1, 1))
-        self.conv2b = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=(3, 3), stride=(1, 1))
-        self.conv3a = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(3, 3), stride=(1, 1))
-        self.conv3b = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=(3, 3), stride=(1, 1))
-        self.linear1 = nn.Linear(100352, 128)
-        self.linear2 = nn.Linear(128, num_classes)
+        super(ResnetImageEncoder, self).__init__()
+        self.drp = nn.Dropout(p=0.5)
+
+        self.classifier = models.resnet18(pretrained=True)
+
+        self.fully_connected_layers = nn.Sequential(self.drp(nn.Linear(2048, 1000)),
+                                                    nn.ReLU(),
+                                                    self.drp(nn.Linear(1000, 100)),
+                                                    nn.ReLU(),
+                                                    self.drp(nn.Linear(100, num_classes)))
+
+        self.classifier.fc = self.fully_connected_layers
 
     def forward(self, x):
-        x = F.relu(self.conv1a(x))
-        x = F.relu(self.conv1b(x))
-        x = self.maxpool(x)
-        x = F.relu(self.conv2a(x))
-        x = F.relu(self.conv2b(x))
-        x = self.maxpool(x)
-        x = F.relu(self.conv3a(x))
-        x = F.relu(self.conv3b(x))
-        x = self.maxpool(x)
-        x = x.reshape(x.shape[0], -1)
-        x = F.relu(self.linear1(x))
-        x = self.linear2(x)
+        x = self.classifier(x)
         x = torch.sigmoid(x)
-
         return x
 
     def inference(self, x):
@@ -145,13 +134,13 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
 
     # Hyper parameters
-    learning_rate = 0.001
+
     batch_size = 32
-    num_epochs = 20
+    num_epochs = 10
     num_classes = 17
 
     preprocess = transforms.Compose([
-        transforms.Resize(256),
+        transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[1, 1, 1]),
     ])
@@ -159,16 +148,34 @@ if __name__ == "__main__":
     # get dataloaders
     train_dataloader, test_dataloader = getDataloaders(preprocess)
 
-    model = MultiLabelImageEncoder(num_classes=num_classes)
+    a, target = next(iter(test_dataloader))
+    input1, input2 = a[1], a[7]
+    input1 = input1.unsqueeze(0)
+    input2 = input2.unsqueeze(0)
+    input1 = input1.to(device)
+    input2 = input2.to(device)
+
+    model = ResnetImageEncoder(num_classes=num_classes)
     print("Number of trainable parameters: ", end="")
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(total_params)
     model.to(device)
     criterion = nn.BCELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    learning_rate1 = 0.0001
+    learning_rate2 = 0.01
+
+    optimizer_finetuning = optim.Adam(model.parameters(), lr=learning_rate1)
+    optimizer_fullyconnected = optim.Adam(model.parameters(), lr=learning_rate2)
 
     loss_vector = []
-    outputs = []
+    outputs1 = []
+    outputs2 = []
+
+    print("Outputs of trial inputs:")
+    print(model(input1))
+    print(model(input2))
+
     for epoch in range(num_epochs):
         for (data, ground_truth) in train_dataloader:
             data = data.to(device=device)
@@ -179,11 +186,46 @@ if __name__ == "__main__":
 
             loss = criterion(output, ground_truth)
 
-            optimizer.zero_grad()
+            optimizer_finetuning.zero_grad()
             loss.backward()
-            optimizer.step()
-
+            optimizer_finetuning.step()
+        outputs1.append(loss.item)
         print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}')
-
         evalF1Score(model, test_dataloader)
+
+        print("Outputs of trial inputs:")
+        print(model(input1))
+        print(model(input2))
+
+
+
+    for param in model.classifier.parameters():
+        param.requires_grad = False
+
+    for param in model.classifier.fc.parameters():
+        param.requires_grad = True
+
+    for epoch in range(num_epochs):
+        for (data, ground_truth) in train_dataloader:
+            data = data.to(device=device)
+            ground_truth = ground_truth.to(device=device)
+
+            output = model(data)
+            # dim of output = (batch_size, feature_dim)
+
+            loss = criterion(output, ground_truth)
+
+            optimizer_fullyconnected.zero_grad()
+            loss.backward()
+            optimizer_fullyconnected.step()
+        outputs2.append(loss.item())
+        print(f'Epoch:{epoch + 1},'
+              f' Loss:{loss.item():.4f}')
+        evalF1Score(model, test_dataloader)
+        print("Outputs of trial inputs:")
+        print(model(input1))
+        print(model(input2))
+
+
+
