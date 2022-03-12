@@ -23,13 +23,16 @@ class ResnetImageEncoder(nn.Module):
         super(ResnetImageEncoder, self).__init__()
         self.drp = nn.Dropout(p=0.5)
 
-        self.classifier = models.resnet18(pretrained=True)
+        self.classifier = models.resnet50(pretrained=True)
 
-        self.fully_connected_layers = nn.Sequential(self.drp(nn.Linear(2048, 1000)),
+        self.fully_connected_layers = nn.Sequential(nn.Linear(2048, 1000),
+                                                    nn.Dropout(p=0.5),
                                                     nn.ReLU(),
-                                                    self.drp(nn.Linear(1000, 100)),
+                                                    nn.Linear(1000, 100),
+                                                    nn.Dropout(p=0.5),
                                                     nn.ReLU(),
-                                                    self.drp(nn.Linear(100, num_classes)))
+                                                    nn.Linear(100, num_classes),
+                                                    nn.Dropout(p=0.5))
 
         self.classifier.fc = self.fully_connected_layers
 
@@ -46,7 +49,7 @@ class ResnetImageEncoder(nn.Module):
         return prediction
 
 
-def save_model(model, filename="./saved_models/multi_label_kaggleNetwork.pth.tar"):
+def save_model(model, filename="./saved_models/multi_label_image_classifier_resnet_fine_tuned.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
 
@@ -102,7 +105,7 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
             predictions = scores > threshold
 
             # evaluating parameters required for prcision and recall
-            # precision = true_pos/(true_pos + true_neg) = true_pos/(total_pos_pred)
+            # precision = true_pos/(true_pos + false_pos) = true_pos/(total_pos_pred)
             # reccall = true_pos/(true_pos + false_neg) = true_pos/(total_pos_targets)
 
             # print(targets[2])
@@ -110,8 +113,8 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
             predictions = predictions.flatten().float()
             targets = targets.flatten()
 
-            total_target_positives += torch.sum(targets == 0).float()
-            total_predicted_positives += torch.sum(predictions == 0).float()
+            total_target_positives += torch.sum(targets == 1).float()
+            total_predicted_positives += torch.sum(predictions == 1).float()
 
             for elem in range(len(targets)):
                 if int(targets[elem]) == int(predictions[elem]) and int(targets[elem]) == 1:
@@ -120,13 +123,18 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
         precision = total_true_positives / total_predicted_positives
         recall = total_true_positives / total_target_positives
 
-        F1score = precision * recall / (precision + recall)
+        F1score = (2*precision * recall) / (precision + recall)
 
     model.train()
 
     print(f"Recall:{recall:.4f}, Precision:{precision:.4f}, F1score:{F1score:.4f}")
 
     return F1score
+
+
+def plt_dynamic(x, y, ax):
+    ax.plot(x, y, 'b')
+    fig.canvas.draw()
 
 
 if __name__ == "__main__":
@@ -136,7 +144,7 @@ if __name__ == "__main__":
     # Hyper parameters
 
     batch_size = 32
-    num_epochs = 10
+    num_epochs = 20
     num_classes = 17
 
     preprocess = transforms.Compose([
@@ -144,16 +152,14 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[1, 1, 1]),
     ])
+    # plotting
+    # fig, ax = plt.subplots(1, 1)
+    # ax.set_xlabel('Epochs')
+    # ax.set_ylabel('Loss(BCE)')
+    # epoch_num_plt, loss_plt = [], []
 
     # get dataloaders
     train_dataloader, test_dataloader = getDataloaders(preprocess)
-
-    a, target = next(iter(test_dataloader))
-    input1, input2 = a[1], a[7]
-    input1 = input1.unsqueeze(0)
-    input2 = input2.unsqueeze(0)
-    input1 = input1.to(device)
-    input2 = input2.to(device)
 
     model = ResnetImageEncoder(num_classes=num_classes)
     print("Number of trainable parameters: ", end="")
@@ -162,19 +168,15 @@ if __name__ == "__main__":
     model.to(device)
     criterion = nn.BCELoss()
 
-    learning_rate1 = 0.0001
-    learning_rate2 = 0.01
+    learning_rate1 = 0.00001
+    learning_rate2 = 0.001
 
     optimizer_finetuning = optim.Adam(model.parameters(), lr=learning_rate1)
     optimizer_fullyconnected = optim.Adam(model.parameters(), lr=learning_rate2)
 
     loss_vector = []
-    outputs1 = []
-    outputs2 = []
-
-    print("Outputs of trial inputs:")
-    print(model(input1))
-    print(model(input2))
+    loss_train = []
+    loss_test = []
 
     for epoch in range(num_epochs):
         for (data, ground_truth) in train_dataloader:
@@ -189,16 +191,11 @@ if __name__ == "__main__":
             optimizer_finetuning.zero_grad()
             loss.backward()
             optimizer_finetuning.step()
-        outputs1.append(loss.item)
+        loss_train.append(loss.item())
+
         print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}')
         evalF1Score(model, test_dataloader)
-
-        print("Outputs of trial inputs:")
-        print(model(input1))
-        print(model(input2))
-
-
 
     for param in model.classifier.parameters():
         param.requires_grad = False
@@ -219,13 +216,14 @@ if __name__ == "__main__":
             optimizer_fullyconnected.zero_grad()
             loss.backward()
             optimizer_fullyconnected.step()
-        outputs2.append(loss.item())
-        print(f'Epoch:{epoch + 1},'
+        loss_train.append(loss.item())
+
+        print(f'Epoch:{num_epochs+epoch + 1},'
               f' Loss:{loss.item():.4f}')
         evalF1Score(model, test_dataloader)
-        print("Outputs of trial inputs:")
-        print(model(input1))
-        print(model(input2))
+
+        plt.plot(loss_train)
+        plt.show()
 
 
 
