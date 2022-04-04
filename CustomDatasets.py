@@ -12,6 +12,7 @@ import json
 import spacy
 import random
 import pandas as pd
+import torchvision.transforms as transforms
 
 random.seed(17)
 
@@ -75,7 +76,7 @@ class UCM_Captions(Dataset):
         self.ret_type = ret_type
         self.root_dir = "./dataset/UCM_Captions/UCM_captions/imgs"
         self.num_captions_per_img, self.meta_data = self.getMetaData()
-        self.image_names = list(self.meta_data.keys())
+        self.image_names = [i[0:-3]+'jpg' for i in self.meta_data.keys()]
         self.type = type
 
         # Example of each elem in captions
@@ -150,10 +151,12 @@ class UCM_Captions(Dataset):
 
         elif self.ret_type == "image-labels":
             dataframe = pd.read_csv("./dataset/UCM_Captions/UCM_captions/multilabels.csv", delimiter="\t")
+            #print(dataframe)
             data_np = dataframe.to_numpy()
             y_label = torch.from_numpy(data_np[index, 1:].astype(np.single))
 
             img_path = os.path.join(self.root_dir, self.image_names[index])
+            #print(self.root_dir)
             image = Image.open(img_path)
             if self.transform:
                 image = self.transform(image)
@@ -251,8 +254,26 @@ def getDictionary():
 
     return None
 
+def getDataloaders(transform=None):
+    dataset = UCM_Captions(transform=transform, ret_type="image-labels")
+    UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
+                                                                [int(dataset.__len__() * 0.8), dataset.__len__() -
+                                                                 int(dataset.__len__() * 0.8)])
+    TrainLoader = DataLoader(UCM_train_set, batch_size=batch_size, shuffle=True)
+    TestLoader = DataLoader(UCM_test_set, batch_size=batch_size, shuffle=True)
+
+    return TrainLoader, TestLoader
+
 
 if __name__ == "__main__":
-    datasetx, datasety, _, _ = getTextUCMDataLoader()
+    batch_size = 32
+    preprocess = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[1, 1, 1]),
+    ])
+    datasetx, datasety = getDataloaders()
     dataset = UCM_Captions(transform=None, ret_type="caption-caption")
-    vocab = dataset.vocab.stoi 
+    vocab = dataset.vocab.stoi
+    im = Image.open('./dataset/test_image.jpg')
+    im.show()

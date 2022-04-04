@@ -124,8 +124,11 @@ if __name__ == "__main__":
     # Loading the test image
     test_image = Image.open("./dataset/test_image.jpg")
 
+
+
     # Device setup for runtime
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+    print("cuda") if torch.cuda.is_available() else print("GiveUp")
 
     # Preprocessor for the images
     preprocess = transforms.Compose([
@@ -150,8 +153,8 @@ if __name__ == "__main__":
     #                                                                                        Sydney_len * 0.8)])
 
     # Initializing dataloader
-    UCM_train_loader = DataLoader(dataset=UCM_train_set, batch_size=batch_size, shuffle=True)
-    UCM_test_loader = DataLoader(dataset=UCM_test_set, batch_size=batch_size, shuffle=True)
+    UCM_train_loader = DataLoader(dataset=UCM_train_set, batch_size=batch_size, shuffle=True, num_workers=2)
+    UCM_test_loader = DataLoader(dataset=UCM_test_set, batch_size=batch_size, shuffle=True, num_workers=2)
     # Sydney_train_loader = DataLoader(dataset=Sydney_train_set, batch_size=batch_size, shuffle=True)
     # Sydney_test_loader = DataLoader(dataset=Sydney_test_set, batch_size=batch_size, shuffle=True)
 
@@ -159,11 +162,13 @@ if __name__ == "__main__":
     model.to(device)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
+    print(range(num_epochs))
     loss_vector = []
     outputs = []
     for epoch in range(num_epochs):
+        print(UCM_train_loader.__len__())
         for (data, ground_truth) in UCM_train_loader:
+            print("here3")
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
             output = model(data)
@@ -172,7 +177,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
+        print("here")
         print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}')
         outputs.append([epoch, data, output, loss.item()])
 

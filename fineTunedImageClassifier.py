@@ -12,10 +12,11 @@ from PIL import Image
 from CustomDatasets import *
 import numpy as np
 import matplotlib.pyplot as plt
+from Mailing import * # for using the mail function
 
-torch.manual_seed(17)
+torch.manual_seed(17)  #Random Initialisation
 
-p = torch.ones(1, 3, 256, 256)
+p = torch.ones(1, 3, 256, 256)  #Not used
 
 
 class ResnetImageEncoder(nn.Module):
@@ -106,7 +107,7 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
 
             # evaluating parameters required for prcision and recall
             # precision = true_pos/(true_pos + false_pos) = true_pos/(total_pos_pred)
-            # reccall = true_pos/(true_pos + false_neg) = true_pos/(total_pos_targets)
+            # recall = true_pos/(true_pos + false_neg) = true_pos/(total_pos_targets)
 
             # print(targets[2])
             # print(predictions[2])
@@ -129,22 +130,17 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
 
     print(f"Recall:{recall:.4f}, Precision:{precision:.4f}, F1score:{F1score:.4f}")
 
-    return F1score
-
-
-def plt_dynamic(x, y, ax):
-    ax.plot(x, y, 'b')
-    fig.canvas.draw()
+    return f"Recall:{recall:.4f}, Precision:{precision:.4f}, F1score:{F1score:.4f}"
 
 
 if __name__ == "__main__":
     # get device
-    device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda')
 
     # Hyper parameters
 
-    batch_size = 32
-    num_epochs = 20
+    batch_size = 16
+    num_epochs = 40
     num_classes = 17
 
     preprocess = transforms.Compose([
@@ -170,16 +166,20 @@ if __name__ == "__main__":
 
     learning_rate1 = 0.00001
     learning_rate2 = 0.001
+    weight_decay = 0.000004
 
-    optimizer_finetuning = optim.Adam(model.parameters(), lr=learning_rate1)
-    optimizer_fullyconnected = optim.Adam(model.parameters(), lr=learning_rate2)
-
+    optimizer_finetuning = optim.Adam(model.parameters(), lr=learning_rate1,weight_decay=weight_decay)
+    optimizer_fullyconnected = optim.Adam(model.parameters(), lr=learning_rate2,weight_decay=weight_decay)
+    # scheduler_finetunig=optim.lr_scheduler.StepLR(optimizer_finetuning, step_size=10,gamma=0.8)
+    # scheduler_fullyconnected=optim.lr_scheduler.StepLR(optimizer_fullyconnected,step_size=5,gamma=0.5)
     loss_vector = []
     loss_train = []
     loss_test = []
-
+    # print("f")
     for epoch in range(num_epochs):
+        # print("f2")
         for (data, ground_truth) in train_dataloader:
+            # print("f1")
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
 
@@ -191,20 +191,31 @@ if __name__ == "__main__":
             optimizer_finetuning.zero_grad()
             loss.backward()
             optimizer_finetuning.step()
+            # scheduler_finetunig.step()
         loss_train.append(loss.item())
-
+        # print(train_dataloader)
         print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}')
+        print("Test data :",end=" ")
         evalF1Score(model, test_dataloader)
+        print("Train data: " ,end= " ")
+        evalF1Score(model, train_dataloader)
+        # try:
+        #     mail('\n\n'+f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}' + '\n\n'+ evalF1Score(model, test_dataloader))
+        # except Exception as e:
+        #     pass
+            #print(e)
+        #evalF1Score(model, test_dataloader)
 
     for param in model.classifier.parameters():
         param.requires_grad = False
 
     for param in model.classifier.fc.parameters():
         param.requires_grad = True
-
+    # print("F")
     for epoch in range(num_epochs):
         for (data, ground_truth) in train_dataloader:
+            # print("F2")
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
 
@@ -216,14 +227,18 @@ if __name__ == "__main__":
             optimizer_fullyconnected.zero_grad()
             loss.backward()
             optimizer_fullyconnected.step()
+            # scheduler_fullyconnected.step()
         loss_train.append(loss.item())
 
         print(f'Epoch:{num_epochs+epoch + 1},'
               f' Loss:{loss.item():.4f}')
+        print("Test data",end=": ")
         evalF1Score(model, test_dataloader)
+        print("Train data",end=": ")
+        evalF1Score(model,train_dataloader)
 
-        plt.plot(loss_train)
-        plt.show()
+    plt.plot(loss_train)
+    plt.show()
 
 
 

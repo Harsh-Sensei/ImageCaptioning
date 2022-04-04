@@ -1,4 +1,4 @@
-# Using embeddings instead of one hot representations for the text
+6# Using embeddings instead of one hot representations for the text
 
 import torch
 import torch.nn as nn  # Neural networks like fully connected layers, CNNs, RNNs, LSTMs, GRUs
