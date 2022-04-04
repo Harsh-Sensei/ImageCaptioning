@@ -132,11 +132,6 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
     return F1score
 
 
-def plt_dynamic(x, y, ax):
-    ax.plot(x, y, 'b')
-    fig.canvas.draw()
-
-
 if __name__ == "__main__":
     # get device
     device = torch.device("cuda" if torch.cuda.is_available() else 'cpu')

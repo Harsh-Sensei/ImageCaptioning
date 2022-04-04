@@ -65,7 +65,7 @@ class EmbeddingTextEncoder(nn.Module):
         outputs, (hidden_states, cell_states) = self.encoderLSTM(embed_x, (init_hidden_state, init_cell_state))
         # dim outputs = (batch_size, sequence_len, hidden_size)
 
-        return hidden_states, cell_states
+        return cell_states
 
 
 class EmbeddingTextDecoder(nn.Module):
@@ -91,9 +91,10 @@ class EmbeddingTextDecoder(nn.Module):
                                    dropout=self.dropout,
                                    batch_first=True)
 
-    def forward(self, hidden, cell, captions):
+    def forward(self, cell, captions):
         batch_size = captions.shape[0]
         target_len = captions.shape[1]
+        hidden = cell.detach().clone().to(device)
         # target_vocab_size = self.vocab_size
 
         outputs = torch.zeros(batch_size, target_len, self.vocab_size)
@@ -117,23 +118,24 @@ class EmbeddingTextDecoder(nn.Module):
 
         return outputs
 
-    def inference(self, hidden, cell, batch_size, target_len=30):
+    def inference(self, cell, batch_size, target_len=30):
+        hidden = cell.detach().clone()
 
-        outputs = torch.zeros(batch_size, target_len, self.vocab_size)
+        outputs = torch.zeros(batch_size, target_len, self.vocab_size).to(device)
 
-        start_token = torch.ones(batch_size, 1).int()
-        lstm_input = self.embed(start_token)
+        start_token = torch.ones(batch_size, 1).int().to(device)
+        lstm_input = self.embed(start_token).to(device)
         # caption_embed batch_size, seq_len, embed_dim
 
         for t in range(1, target_len):
             output, (hidden, cell) = self.decoderLSTM(lstm_input, (hidden, cell))
-
+            output = output.to(device)
             # output dim = (batch_size, 1, vocab_size)
             output_embedding = self.linear_embed_projection(output.squeeze(1))
             output_vocab_probability = self.linear_vocab_projection(output.squeeze(1))
             outputs[:, t, :] = output_vocab_probability
 
-            lstm_input = output_embedding.unsqueeze(1)
+            lstm_input = output_embedding.unsqueeze(1).to(device)
 
         return outputs
 
@@ -161,14 +163,15 @@ class EmbeddingTextEncoderDecoder(nn.Module):
     def forward(self, x):
         # dim x = (batch_size, sequence_len)
 
-        hidden, cell = self.encoder(x)
-        prediction = self.decoder(hidden, cell, x)
+        cell = self.encoder(x)
+        prediction = self.decoder(cell, x)
 
         return prediction
 
     def inference(self, x, max_target_length=30):
-        hidden, cell = self.encoder(x)
-        prediction = self.decoder.inference(hidden, cell, x.size(0), target_len=max_target_length)
+        cell = self.encoder(x)
+        prediction = self.decoder.inference(cell, x.size(0), target_len=max_target_length)
+        prediction[:, 0, 1] = torch.ones(x.size(0), 1, 1).to(device)
 
         return prediction
 
@@ -233,6 +236,11 @@ if __name__ == "__main__":
 
             optimizer.step()
 
+        loss_vector.append(loss.item())
         print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}')
 
+    plt.plot(loss_vector)
+    plt.xlabel("Epochs")
+    plt.ylabel("Cross Entropy Loss")
+    plt.show()
     test(UCM_train_loader, model, device)

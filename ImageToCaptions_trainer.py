@@ -15,15 +15,12 @@ import matplotlib.pyplot as plt
 from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
-import time
-
-script_start_time = time.time()
 
 torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate = 0.001
-batch_size = 32
+batch_size = 16
 num_epochs = 20
 num_classes = 17
 feature_dim = 1000
@@ -56,19 +53,6 @@ class Identity(nn.Module):
 
     def forward(self, x):
         return x
-
-
-class KL_MSE_Loss(nn.Module):
-    def __init__(self):
-        super(KL_MSE_Loss, self).__init__()
-        self.kl_loss = nn.KLDivLoss()
-        self.mse_loss = nn.MSELoss()
-
-    def forward(self, output, groundtruth):
-        loss1 = self.mse_loss(output, groundtruth)
-        # loss2 = self.kl_loss(groundtruth, output)
-
-        return loss1 #+ loss2
 
 
 def primarytest(image_en, text_dec, dataloader, linear):
@@ -113,10 +97,10 @@ def labelsToEncoding(labels, text_model, vocabulary, label_to_string):
 
     return result
 
-def save_model(model, filename="./saved_models/distilled_image_encoder.pth.tar"):
+def save_model(model, filename="./saved_models/image_encoder_downstream.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
-    print("Model saved : ./saved_models/distilled_image_encoder.pth.tar")
+
     return None
 
 def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
@@ -132,8 +116,7 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
         input = input.unsqueeze(0).to(device)
         captions = captions[i]
         img_encoding = img_encoder(input)
-        img_encoding = img_encoding.reshape(2, 1, 1024)
-        img_encoding = img_encoding.unsqueeze(0).to(device)
+        img_encoding = img_encoding.reshape(2, 1, 1024).to(device)
         output = txt_decoder.inference(img_encoding, 1)
         output = output.squeeze(0)
         output = output.argmax(1)
@@ -160,10 +143,12 @@ if __name__ == "__main__":
     train_dataloader, test_dataloader, vocabulary = getDataloaders(preprocess)
 
     image_model = ResnetImageEncoder(num_classes=num_classes)
-    image_model.load_state_dict(
-        torch.load("./saved_models/multi_label_image_classifier_resnet_fine_tuned.pth.tar")['state_dict'])
+
     image_model = image_model.to(device)
     image_model.classifier.fc = Identity()
+    image_model.load_state_dict(
+        torch.load("./saved_models/distilled_image_encoder.pth.tar")['state_dict'])
+
 
     text_model = EmbeddingTextEncoderDecoder(embedding_dim=embedding_dim,
                                              en_hidden_size=en_hidden_size,
@@ -176,49 +161,40 @@ if __name__ == "__main__":
 
     text_model.load_state_dict(torch.load("./saved_models/Embed_e_LSTM_d_LSTM_UCM.pth.tar")['state_dict'])
     text_encoder_model = text_model.encoder.to(device)
+    text_model.decoder = text_model.decoder.to(device)
 
     # text_encoder_model returns output, hidden_state, cell_state
-    for param in text_encoder_model.parameters():
-        param.requires_grad = False
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
+    params = list(image_model.parameters()) + list(text_model.decoder.parameters())
+    optimizer = optim.Adam(params, lr=learning_rate)
 
     print("Number of trainable parameters(image encoder): ", end="")
-
     total_params = sum(p.numel() for p in image_model.parameters() if p.requires_grad)
     total_params += sum(p.numel() for p in text_encoder_model.parameters() if p.requires_grad)
     print(total_params)
-
-    criterion = KL_MSE_Loss()
-
-    parameters = list(image_model.parameters()) + list(text_model.parameters())
-    optimizer = optim.Adam(parameters, lr=learning_rate)
-
     loss_vector = []
     outputs = []
 
     for epoch in range(num_epochs):
-        epoch_start_time = time.time()
         for (image_data, text_data) in train_dataloader:
             image_data = image_data.to(device=device)
             text_data = text_data.to(device=device)
-
+            batch_size = image_data.shape[0]
+            # dim image_encoding = batch_size, 2048
             image_encoding = image_model(image_data)
-            text_encoding_cell = text_encoder_model(text_data)
-            text_encoding_cell = text_encoding_cell.permute(1, 0, 2).to(device=device)
-            text_encoding_cell = text_encoding_cell.reshape(text_encoding_cell.shape[0], -1)
-
-            loss = criterion(image_encoding, text_encoding_cell)
+            image_encoding = image_encoding.reshape(2, batch_size, 1024).to(device)
+            # print(image_encoding.shape)
+            # print(text_data.shape)
+            predictions = text_model.decoder.forward(image_encoding, text_data)
+            predictions = predictions.permute(0, 2, 1).to(device=device)
+            loss = criterion(predictions, text_data)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
         loss_vector.append(loss.item())
+
         print(f'Epoch:{epoch + 1},'
-              f' Loss:{loss.item():.4f}, Epoch time: {time.time()-epoch_start_time}')
+              f' Loss:{loss.item():.4f}')
 
-    plt.plot(loss_vector)
-    plt.xlabel("Epochs")
-    plt.ylabel("Loss(MSE)")
-    plt.show()
-
-    save_model(image_model)
+    img2txt(image_model, text_model.decoder, test_dataloader)

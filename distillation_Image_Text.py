@@ -10,6 +10,10 @@ from CustomDatasets import *  # Datasets involving captions
 import numpy as np
 import spacy
 import random
+import time
+
+script_start_time = time.time()
+
 
 from imageEncoder import *
 from textEncoder import *
@@ -190,6 +194,7 @@ if __name__ == "__main__":
     loss_vector = []
     outputs = []
 
+    epoch_start_time = time.time()
     for epoch in range(num_epochs):
         for (image, caption) in UCM_train_loader:
             image = image.to(device=device)
@@ -206,6 +211,8 @@ if __name__ == "__main__":
 
             optimizer.step()
 
-        print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}')
+        print(f'Epoch:{epoch + 1}, Loss:{loss.item():.4f}, Epoch time:{time.time()-epoch_start_time}')
 
     inferImageText(image_encoder, model.decoder, UCM_test_loader)
+
+    print(f"Script execution time: {time.time()-script_start_time}")
