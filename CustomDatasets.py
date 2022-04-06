@@ -197,7 +197,7 @@ class AuxPadClass:
 
 
 def getTextUCMDataLoader(batch_size=32):
-    dataset = UCM_Captions(transform=None, ret_type="caption-caption")
+    dataset = UCM_Captions(transform=None, ret_type="caption-caption", type="one-many")
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])
@@ -212,8 +212,8 @@ def getTextUCMDataLoader(batch_size=32):
     return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__()
 
 
-def getImageTextUCMDataLoader(batch_size=32, transform=None, type="one-one"):
-    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type="one-one")
+def getImageTextUCMDataLoader(batch_size=32, transform=None, type="one-many"):
+    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type=type)
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])

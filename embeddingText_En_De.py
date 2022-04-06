@@ -24,14 +24,14 @@ num_layers = 2
 en_hidden_size = 1024
 de_hidden_size = 1024
 embedding_dim = 300
-vocab_size = 322  # to be assigned again after datasets are loaded
+vocab_size = 309  # to be assigned again after datasets are loaded
 dropout_p = 0.5
 teacher_force_ratio = 0.5
 
 # Hyper parameters for learning
 learning_rate = 0.001
 batch_size = 32
-num_epochs = 20
+num_epochs = 2
 
 
 class EmbeddingTextEncoder(nn.Module):
