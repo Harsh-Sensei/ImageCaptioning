@@ -75,7 +75,7 @@ class UCM_Captions(Dataset):
         self.ret_type = ret_type
         self.root_dir = "./dataset/UCM_Captions/UCM_captions/imgs"
         self.num_captions_per_img, self.meta_data = self.getMetaData()
-        self.image_names = list(self.meta_data.keys())
+        self.image_names = [i[0:-3] + 'jpg' for i in self.meta_data.keys()]
         self.type = type
 
         # Example of each elem in captions

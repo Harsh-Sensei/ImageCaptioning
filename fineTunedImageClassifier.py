@@ -217,8 +217,8 @@ if __name__ == "__main__":
               f' Loss:{loss.item():.4f}')
         evalF1Score(model, test_dataloader)
 
-        plt.plot(loss_train)
-        plt.show()
+    plt.plot(loss_train)
+    plt.show()
 
 
 

@@ -31,7 +31,7 @@ teacher_force_ratio = 0.5
 # Hyper parameters for learning
 learning_rate = 0.001
 batch_size = 32
-num_epochs = 2
+num_epochs = 40
 
 
 class EmbeddingTextEncoder(nn.Module):

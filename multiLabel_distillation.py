@@ -17,14 +17,16 @@ from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
 import time
 
+from torch.cuda.amp import GradScaler, autocast
+
 script_start_time = time.time()
 
 torch.manual_seed(17)
 
 # Hyper parameters
-learning_rate = 0.001
-batch_size = 32
-num_epochs = 20
+learning_rate = 0.01
+batch_size = 16
+num_epochs = 1
 num_classes = 17
 feature_dim = 1000
 en_num_layers = 2
@@ -37,6 +39,10 @@ dropout_p = 0.5
 teacher_force_ratio = 0.5
 pad_idx = 0
 
+
+#gradient accumulations
+gradient_accumulation=8
+scaler=GradScaler()
 
 def getDataloaders(transform=None):
     dataset = UCM_Captions(transform=transform, ret_type="image-caption")
@@ -66,7 +72,7 @@ class KL_MSE_Loss(nn.Module):
 
     def forward(self, output, groundtruth):
         loss1 = self.mse_loss(output, groundtruth)
-        # loss2 = self.kl_loss(groundtruth, output)
+        #loss2 = self.kl_loss(groundtruth, output)
 
         return loss1 #+ loss2
 
@@ -132,8 +138,8 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
         input = input.unsqueeze(0).to(device)
         captions = captions[i]
         img_encoding = img_encoder(input)
-        img_encoding = img_encoding.reshape(2, 1, 1024)
-        img_encoding = img_encoding.unsqueeze(0).to(device)
+        img_encoding = img_encoding.reshape(2, 1, 1024).to(device)
+        #img_encoding = img_encoding.unsqueeze(0).to(device)
         output = txt_decoder.inference(img_encoding, 1)
         output = output.squeeze(0)
         output = output.argmax(1)
@@ -144,6 +150,7 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
         print(captions)
 
         return output, captions
+
 
 
 if __name__ == "__main__":
@@ -197,7 +204,9 @@ if __name__ == "__main__":
 
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
+        batch_id=0
         for (image_data, text_data) in train_dataloader:
+            batch_id+=1
             image_data = image_data.to(device=device)
             text_data = text_data.to(device=device)
 
@@ -208,9 +217,11 @@ if __name__ == "__main__":
 
             loss = criterion(image_encoding, text_encoding_cell)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss/gradient_accumulation).backward()
+            if (batch_id+1) % gradient_accumulation ==0:
+                optimizer.step()
+                optimizer.zero_grad()
+
 
         loss_vector.append(loss.item())
         print(f'Epoch:{epoch + 1},'

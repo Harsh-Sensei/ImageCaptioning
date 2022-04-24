@@ -15,12 +15,12 @@ import matplotlib.pyplot as plt
 from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
-
+from torch.cuda.amp import GradScaler, autocast
 torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate = 0.001
-batch_size = 16
+batch_size = 8
 num_epochs = 20
 num_classes = 17
 feature_dim = 1000
@@ -29,10 +29,14 @@ de_num_layers = 2
 en_hidden_size = 1024
 de_hidden_size = 1024
 embedding_dim = 300
-vocab_size = 322  # to be defined after datasets are loaded
+vocab_size = 309  # to be defined after datasets are loaded
 dropout_p = 0.5
 teacher_force_ratio = 0.5
 pad_idx = 0
+
+#gradient accumulations
+gradient_accumulation=8
+scaler=GradScaler()
 
 
 def getDataloaders(transform=None):
@@ -176,7 +180,9 @@ if __name__ == "__main__":
     outputs = []
 
     for epoch in range(num_epochs):
+        batch_id=0
         for (image_data, text_data) in train_dataloader:
+            batch_id+=1
             image_data = image_data.to(device=device)
             text_data = text_data.to(device=device)
             batch_size = image_data.shape[0]
@@ -189,9 +195,13 @@ if __name__ == "__main__":
             predictions = predictions.permute(0, 2, 1).to(device=device)
             loss = criterion(predictions, text_data)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss / gradient_accumulation).backward()
+            if (batch_id + 1) % gradient_accumulation == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+            # optimizer.zero_grad()
+            # loss.backward()
+            # optimizer.step()
         loss_vector.append(loss.item())
 
         print(f'Epoch:{epoch + 1},'
