@@ -15,15 +15,17 @@ import matplotlib.pyplot as plt
 from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
+import cv2 as cv
 
 torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate = 0.001
 batch_size = 16
-num_epochs = 20
+num_epochs = 40
 num_classes = 17
 feature_dim = 1000
+
 en_num_layers = 2
 de_num_layers = 2
 en_hidden_size = 1024
@@ -37,6 +39,7 @@ pad_idx = 0
 
 def getDataloaders(transform=None):
     dataset = UCM_Captions(transform=transform, ret_type="image-caption")
+
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])
@@ -97,13 +100,15 @@ def labelsToEncoding(labels, text_model, vocabulary, label_to_string):
 
     return result
 
+
 def save_model(model, filename="./saved_models/image_encoder_downstream.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
 
     return None
 
-def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
+
+def img2txt(img_encoder, txt_decoder, dataloader, itos, all=False, i=7):
     if all:
         for (img_data, captions) in dataloader:
             img_encoding = img_encoder(img_data)
@@ -113,6 +118,9 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
     else:
         input, captions = next(iter(dataloader))
         input = input[i]
+        input_img = input.detach().permute(1, 2, 0).numpy()
+        input_img = input_img + 0.5
+
         input = input.unsqueeze(0).to(device)
         captions = captions[i]
         img_encoding = img_encoder(input)
@@ -120,11 +128,13 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
         output = txt_decoder.inference(img_encoding, 1)
         output = output.squeeze(0)
         output = output.argmax(1)
+        cv.imshow("Input Image", input_img)
 
         print("Predicted")
-        print(output)
+        print([itos[int(e)] for e in output.tolist()])
+
         print("Ground Truth")
-        print(captions)
+        print([itos[int(e)] for e in captions.tolist()])
 
         return output, captions
 
@@ -149,7 +159,6 @@ if __name__ == "__main__":
     image_model.load_state_dict(
         torch.load("./saved_models/distilled_image_encoder.pth.tar")['state_dict'])
 
-
     text_model = EmbeddingTextEncoderDecoder(embedding_dim=embedding_dim,
                                              en_hidden_size=en_hidden_size,
                                              num_layers=num_layers,
@@ -164,7 +173,9 @@ if __name__ == "__main__":
     text_model.decoder = text_model.decoder.to(device)
 
     # text_encoder_model returns output, hidden_state, cell_state
-    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
+    ins_weights = torch.tensor(vocabulary.weights, requires_grad=False).to(device)
+    print(len(ins_weights))
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx, weight=ins_weights)
     params = list(image_model.parameters()) + list(text_model.decoder.parameters())
     optimizer = optim.Adam(params, lr=learning_rate)
 
@@ -175,26 +186,42 @@ if __name__ == "__main__":
     loss_vector = []
     outputs = []
 
+    ext = False
     for epoch in range(num_epochs):
-        for (image_data, text_data) in train_dataloader:
-            image_data = image_data.to(device=device)
-            text_data = text_data.to(device=device)
-            batch_size = image_data.shape[0]
-            # dim image_encoding = batch_size, 2048
-            image_encoding = image_model(image_data)
-            image_encoding = image_encoding.reshape(2, batch_size, 1024).to(device)
-            # print(image_encoding.shape)
-            # print(text_data.shape)
-            predictions = text_model.decoder.forward(image_encoding, text_data)
-            predictions = predictions.permute(0, 2, 1).to(device=device)
-            loss = criterion(predictions, text_data)
+        if not ext:
+            for (j, (image_data, text_data)) in enumerate(train_dataloader):
+                image_data = image_data.to(device=device)
+                text_data = text_data.to(device=device)
+                batch_size = image_data.shape[0]
+                image_encoding = image_model(image_data)
+                image_encoding = image_encoding.reshape(2, batch_size, 1024).to(device)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        loss_vector.append(loss.item())
+                predictions = text_model.decoder.forward(image_encoding, text_data)
+                predictions = predictions.permute(0, 2, 1).to(device=device)
+                loss = criterion(predictions, text_data)
 
-        print(f'Epoch:{epoch + 1},'
-              f' Loss:{loss.item():.4f}')
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+            if epoch % 10 == 0:
+                x = ""
+                while x != "C" and x != "M" and x != "E":
+                    x = input("Commands(C:Continue;S:Save;T:Test;E:Exit;M:More Epochs)")
+                    if x == "S":
+                        save_model(image_model)
+                        save_model(text_model.decoder, filename="./saved_models/text_decoder_downstream.pth.tar")
+                    if x == "T":
+                        img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
+                    if x == "E":
+                        ext = True
 
-    img2txt(image_model, text_model.decoder, test_dataloader)
+            loss_vector.append(loss.item())
+            img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
+
+            print(f'Epoch:{epoch + 1},'
+                  f' Loss:{loss.item():.4f}')
+
+    cv.waitKey(0)
+    # closing all open windows
+    cv.destroyAllWindows()
+    img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
