@@ -22,7 +22,7 @@ torch.manual_seed(17)
 # Hyper parameters
 learning_rate = 0.001
 batch_size = 16
-num_epochs = 40
+num_epochs = 20
 num_classes = 17
 feature_dim = 1000
 
@@ -38,7 +38,7 @@ pad_idx = 0
 
 
 def getDataloaders(transform=None):
-    dataset = UCM_Captions(transform=transform, ret_type="image-caption")
+    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type="one-many")
 
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     # text_encoder_model returns output, hidden_state, cell_state
     ins_weights = torch.tensor(vocabulary.weights, requires_grad=False).to(device)
     print(len(ins_weights))
-    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx, weight=ins_weights)
+    criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)#, weight=ins_weights)
     params = list(image_model.parameters()) + list(text_model.decoder.parameters())
     optimizer = optim.Adam(params, lr=learning_rate)
 
@@ -203,17 +203,17 @@ if __name__ == "__main__":
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-            if epoch % 10 == 0:
-                x = ""
-                while x != "C" and x != "M" and x != "E":
-                    x = input("Commands(C:Continue;S:Save;T:Test;E:Exit;M:More Epochs)")
-                    if x == "S":
-                        save_model(image_model)
-                        save_model(text_model.decoder, filename="./saved_models/text_decoder_downstream.pth.tar")
-                    if x == "T":
-                        img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
-                    if x == "E":
-                        ext = True
+            # if epoch % 10 == 0:
+            #     x = ""
+            #     while x != "C" and x != "M" and x != "E":
+            #         x = input("Commands(C:Continue;S:Save;T:Test;E:Exit;M:More Epochs)")
+            #         if x == "S":
+            #             save_model(image_model)
+            #             save_model(text_model.decoder, filename="./saved_models/text_decoder_downstream.pth.tar")
+            #         if x == "T":
+            #             img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
+            #         if x == "E":
+            #             ext = True
 
             loss_vector.append(loss.item())
             img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)

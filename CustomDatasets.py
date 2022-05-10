@@ -129,7 +129,7 @@ class UCM_Captions(Dataset):
             return image, image
 
         elif self.ret_type == "image-caption":
-            if self.type == "many-one":
+            if self.type == "one-many":
                 img_path = os.path.join(self.root_dir, self.image_names[int(index) // int(self.num_captions_per_img)])
                 image = Image.open(img_path)
                 if self.transform:
@@ -150,7 +150,7 @@ class UCM_Captions(Dataset):
                 y_label = y_label[random.randint(0, 4)]['raw']
                 y_label = self.numericalize_caption(y_label)
                 y_label = torch.tensor(y_label)
-            return image, y_label
+                return image, y_label
 
         elif self.ret_type == "image-labels":
             dataframe = pd.read_csv("./dataset/UCM_Captions/UCM_captions/multilabels.csv", delimiter="\t")

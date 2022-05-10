@@ -15,14 +15,18 @@ import matplotlib.pyplot as plt
 from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
+from torch.nn.functional import normalize
 import time
+
 
 script_start_time = time.time()
 
 torch.manual_seed(17)
 
 # Hyper parameters
-learning_rate = 0.001
+learning_rate_img = 0.001
+learning_rate_text = 0.00001
+
 batch_size = 32
 num_epochs = 20
 num_classes = 17
@@ -57,6 +61,13 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
 
+class Linear_same(nn.Module):
+    def __init__(self):
+        super(Linear_same, self).__init__()
+        self.linear = nn.Linear(2048, 2048)
+
+    def forward(self, x):
+        return self.linear(x)
 
 class KL_MSE_Loss(nn.Module):
     def __init__(self):
@@ -158,13 +169,14 @@ if __name__ == "__main__":
 
     # get dataloaders
     train_dataloader, test_dataloader, vocabulary = getDataloaders(preprocess)
-
+    print(f"Number of datapoints in training dataset(approx): {train_dataloader.__len__()*batch_size}")
+    print(f"Number of datapoints in test dataset(approx): {test_dataloader.__len__()*batch_size}")
     image_model = ResnetImageEncoder(num_classes=num_classes)
     image_model.load_state_dict(
         torch.load("./saved_models/multi_label_image_classifier_resnet_fine_tuned.pth.tar")['state_dict'])
     image_model = image_model.to(device)
-    image_model.classifier.fc = Identity()
 
+    image_model.classifier.fc = Identity()
     text_model = EmbeddingTextEncoderDecoder(embedding_dim=embedding_dim,
                                              en_hidden_size=en_hidden_size,
                                              num_layers=num_layers,
@@ -178,8 +190,8 @@ if __name__ == "__main__":
     text_encoder_model = text_model.encoder.to(device)
 
     # text_encoder_model returns output, hidden_state, cell_state
-    for param in text_encoder_model.parameters():
-        param.requires_grad = False
+    # for param in text_encoder_model.parameters():
+    #     param.requires_grad = False
 
     print("Number of trainable parameters(image encoder): ", end="")
 
@@ -190,7 +202,8 @@ if __name__ == "__main__":
     criterion = KL_MSE_Loss()
 
     parameters = list(image_model.parameters()) + list(text_model.parameters())
-    optimizer = optim.Adam(parameters, lr=learning_rate)
+    optimizer_img = optim.Adam(image_model.parameters(), lr=learning_rate_img)
+    optimizer_text = optim.Adam(text_encoder_model.parameters(), lr=learning_rate_text)
 
     loss_vector = []
     outputs = []
@@ -206,17 +219,22 @@ if __name__ == "__main__":
             text_encoding_cell = text_encoding_cell.permute(1, 0, 2).to(device=device)
             text_encoding_cell = text_encoding_cell.reshape(text_encoding_cell.shape[0], -1)
 
+            # image_encoding = normalize(image_encoding, p=2, dim=1)
+            # text_encoding_cell = normalize(text_encoding_cell, p=2, dim=1)
+
             loss = criterion(image_encoding, text_encoding_cell)
 
-            optimizer.zero_grad()
+            optimizer_img.zero_grad()
+            optimizer_text.zero_grad()
             loss.backward()
-            optimizer.step()
+            optimizer_img.step()
+            optimizer_text.step()
 
         loss_vector.append(loss.item())
         print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}, Epoch time: {time.time()-epoch_start_time}')
 
-    plt.plot(loss_vector)
+    plt.plot(loss_vector, linestyle='--', marker='o', color='b')
     plt.xlabel("Epochs")
     plt.ylabel("Loss(MSE)")
     plt.show()

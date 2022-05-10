@@ -12,7 +12,7 @@ from PIL import Image
 from CustomDatasets import *
 import numpy as np
 import matplotlib.pyplot as plt
-
+from torch.nn.functional import normalize
 torch.manual_seed(17)
 
 p = torch.ones(1, 3, 256, 256)
@@ -33,7 +33,6 @@ class ResnetImageEncoder(nn.Module):
                                                     nn.ReLU(),
                                                     nn.Linear(100, num_classes),
                                                     nn.Dropout(p=0.5))
-
         self.classifier.fc = self.fully_connected_layers
 
     def forward(self, x):
@@ -49,7 +48,7 @@ class ResnetImageEncoder(nn.Module):
         return prediction
 
 
-def save_model(model, filename="./saved_models/multi_label_image_classifier_resnet_fine_tuned.pth.tar"):
+def save_model(model, filename="./saved_models/multi_label_image_classifier_resnet_fine_tuned_2.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
 
@@ -147,14 +146,11 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[1, 1, 1]),
     ])
-    # plotting
-    # fig, ax = plt.subplots(1, 1)
-    # ax.set_xlabel('Epochs')
-    # ax.set_ylabel('Loss(BCE)')
-    # epoch_num_plt, loss_plt = [], []
 
     # get dataloaders
     train_dataloader, test_dataloader = getDataloaders(preprocess)
+    print(f"Number of datapoints in training dataset(approx): {train_dataloader.__len__()*batch_size}")
+    print(f"Number of datapoints in test dataset(approx): {test_dataloader.__len__()*batch_size}")
 
     model = ResnetImageEncoder(num_classes=num_classes)
     print("Number of trainable parameters: ", end="")
@@ -217,6 +213,7 @@ if __name__ == "__main__":
               f' Loss:{loss.item():.4f}')
         evalF1Score(model, test_dataloader)
 
+        save_model(model)
         plt.plot(loss_train)
         plt.show()
 

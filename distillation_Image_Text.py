@@ -183,7 +183,7 @@ if __name__ == "__main__":
     # get dataloader
     UCM_train_loader, UCM_test_loader, pad_idx, vocab_size = getImageTextUCMDataLoader(batch_size=batch_size,
                                                                                        transform=preprocess,
-                                                                                       type="one-one")
+                                                                                        type="one-many")
 
     image_encoder = getImageEncoder()
     text_encoder, model = getTextEncoder()

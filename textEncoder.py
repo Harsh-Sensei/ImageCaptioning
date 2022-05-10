@@ -12,6 +12,7 @@ from CustomDatasets import *  # Datasets involving captions
 import numpy as np
 import spacy
 import random
+from torch.nn.functional import normalize
 
 torch.manual_seed(73)
 
@@ -55,8 +56,6 @@ class TextEncoder(nn.Module):
         # dim outputs = (batch_size, sequence_len, hidden_size)
 
         encoded_text = self.linearProject(outputs.sum(dim=1))
-        # print("outputs.shape")
-        # print(outputs.shape)
 
         return encoded_text, hidden_states, cell_states
 
