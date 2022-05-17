@@ -170,7 +170,6 @@ if __name__ == "__main__":
 
     # get dataloaders
     train_dataloader, test_dataloader = getDataloaders(preprocess)
-
     model = MultiLabelImageEncoder(num_classes=num_classes)
     print("Number of trainable parameters: ", end="")
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

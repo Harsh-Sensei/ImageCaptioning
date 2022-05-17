@@ -14,7 +14,6 @@ import time
 
 script_start_time = time.time()
 
-
 from imageEncoder import *
 from textEncoder import *
 
@@ -76,7 +75,7 @@ def getImageEncoder(model_path="./saved_models/e_resnet18_d_custom_UCM.pth.tar",
         return model
 
 
-def getTextEncoder(model_path="./saved_models/e_LSTM_d_LSTM_epochs20_UCM.pth.tar"):
+def getTextEncoder(model_path="./saved_models/e_LSTM_d_LSTM_UCM.pth.tar"):
     model = TextEncoderDecoder(feature_dim=feature_dim,
                                embedding_dim=embedding_dim,
                                en_hidden_size=en_hidden_size,

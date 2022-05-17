@@ -16,12 +16,13 @@ from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
 from torch.cuda.amp import GradScaler, autocast
+import cv2 as cv
 torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate = 0.001
 batch_size = 8
-num_epochs = 20
+num_epochs = 50
 num_classes = 17
 feature_dim = 1000
 en_num_layers = 2
@@ -31,12 +32,12 @@ de_hidden_size = 1024
 embedding_dim = 300
 vocab_size = 309  # to be defined after datasets are loaded
 dropout_p = 0.5
-teacher_force_ratio = 0.5
+teacher_force_ratio = 1
 pad_idx = 0
 
 #gradient accumulations
-gradient_accumulation=8
-scaler=GradScaler()
+gradient_accumulation = 2
+scaler = GradScaler()
 
 
 def getDataloaders(transform=None):
@@ -106,8 +107,7 @@ def save_model(model, filename="./saved_models/image_encoder_downstream.pth.tar"
     torch.save(state, filename)
 
     return None
-
-def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
+def img2txt(img_encoder, txt_decoder, dataloader, itos, all=False, i=7):
     if all:
         for (img_data, captions) in dataloader:
             img_encoding = img_encoder(img_data)
@@ -117,6 +117,9 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
     else:
         input, captions = next(iter(dataloader))
         input = input[i]
+        input_img = input.detach().permute(1, 2, 0).numpy()
+        input_img = input_img + 0.5
+
         input = input.unsqueeze(0).to(device)
         captions = captions[i]
         img_encoding = img_encoder(input)
@@ -124,11 +127,14 @@ def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
         output = txt_decoder.inference(img_encoding, 1)
         output = output.squeeze(0)
         output = output.argmax(1)
+        cv.imshow("Input Image", input_img)
+        cv.waitKey(1)
 
         print("Predicted")
-        print(output)
+        print([itos[int(e)] for e in output.tolist()])
+
         print("Ground Truth")
-        print(captions)
+        print([itos[int(e)] for e in captions.tolist()])
 
         return output, captions
 
@@ -163,18 +169,24 @@ if __name__ == "__main__":
                                              p=dropout_p,
                                              teacher_force_ratio=teacher_force_ratio).to(device=device)
 
+
+
     text_model.load_state_dict(torch.load("./saved_models/Embed_e_LSTM_d_LSTM_UCM.pth.tar")['state_dict'])
-    text_encoder_model = text_model.encoder.to(device)
+    #text_encoder_model = text_model.encoder.to(device)
     text_model.decoder = text_model.decoder.to(device)
 
-    # text_encoder_model returns output, hidden_state, cell_state
+    #ins_weights = torch.tensor(vocabulary.weights, requires_grad=False).to(device)
+    #print(len(ins_weights))
     criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
+
+    # text_encoder_model returns output, hidden_state, cell_state
+    #criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
     params = list(image_model.parameters()) + list(text_model.decoder.parameters())
     optimizer = optim.Adam(params, lr=learning_rate)
 
     print("Number of trainable parameters(image encoder): ", end="")
     total_params = sum(p.numel() for p in image_model.parameters() if p.requires_grad)
-    total_params += sum(p.numel() for p in text_encoder_model.parameters() if p.requires_grad)
+    #total_params += sum(p.numel() for p in text_encoder_model.parameters() if p.requires_grad)
     print(total_params)
     loss_vector = []
     outputs = []
@@ -203,8 +215,10 @@ if __name__ == "__main__":
             # loss.backward()
             # optimizer.step()
         loss_vector.append(loss.item())
+        img2txt(image_model, text_model.decoder, test_dataloader,vocabulary.itos)
+        img2txt(image_model, text_model.decoder, test_dataloader,vocabulary.itos)
 
         print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}')
 
-    img2txt(image_model, text_model.decoder, test_dataloader)
+    #img2txt(image_model, text_model.decoder, test_dataloader)

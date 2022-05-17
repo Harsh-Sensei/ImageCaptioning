@@ -1,6 +1,7 @@
 # Sydney_captions = https://mega.nz/folder/pG4yTYYA#4c4buNFLibryZnlujsrwEQ
 # UCM_captions = https://mega.nz/folder/wCpSzSoS#RXzIlrv--TDt3ENZdKN8JA
 
+from math import *
 import PIL.Image as Image
 import numpy as np
 import os
@@ -12,6 +13,7 @@ import json
 import spacy
 import random
 import pandas as pd
+import matplotlib.pyplot as plt
 
 random.seed(17)
 
@@ -24,6 +26,8 @@ class Vocabulary:
         self.freq_threshold = freq_threshold
         self.itos = {0: "<PAD>", 1: "<SOS>", 2: "<EOS>", 3: "<UKN>"}
         self.stoi = {"<PAD>": 0, "<SOS>": 1, "<EOS>": 2, "<UKN>": 3}
+        self.freq = {}
+        self.isns = None
 
     def __len__(self):
         return len(self.itos)
@@ -35,20 +39,20 @@ class Vocabulary:
 
     # builds the vocabulary from given set of sentences
     def build_vocabulary(self, sentence_list):
-        freq = {}
         idx = 4
 
         for elem in sentence_list:
             for word in self.tokenize(elem):
-                if word not in freq:
-                    freq[word] = 1
+                if word not in self.freq:
+                    self.freq[word] = 1
                 else:
-                    freq[word] += 1
+                    self.freq[word] += 1
 
-                if freq[word] == self.freq_threshold:
+                if self.freq[word] == self.freq_threshold:
                     self.stoi[word] = idx
                     self.itos[idx] = word
                     idx += 1
+        self.weights = [1/sqrt(int(self.freq[e])) if i >= 4 else 1 for (i, e) in enumerate(self.stoi.keys())]
 
         return
 
@@ -75,7 +79,7 @@ class UCM_Captions(Dataset):
         self.ret_type = ret_type
         self.root_dir = "./dataset/UCM_Captions/UCM_captions/imgs"
         self.num_captions_per_img, self.meta_data = self.getMetaData()
-        self.image_names = [i[0:-3] + 'jpg' for i in self.meta_data.keys()]
+        self.image_names = list(self.meta_data.keys())
         self.type = type
 
         # Example of each elem in captions
@@ -197,7 +201,7 @@ class AuxPadClass:
 
 
 def getTextUCMDataLoader(batch_size=32):
-    dataset = UCM_Captions(transform=None, ret_type="caption-caption", type="one-many")
+    dataset = UCM_Captions(transform=None, ret_type="caption-caption")
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])
@@ -212,8 +216,8 @@ def getTextUCMDataLoader(batch_size=32):
     return TrainLoader, TestLoader, pad_idx, dataset.vocab.__len__()
 
 
-def getImageTextUCMDataLoader(batch_size=32, transform=None, type="one-many"):
-    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type=type)
+def getImageTextUCMDataLoader(batch_size=32, transform=None, type="one-one"):
+    dataset = UCM_Captions(transform=transform, ret_type="image-caption", type="one-one")
     UCM_train_set, UCM_test_set = torch.utils.data.random_split(dataset,
                                                                 [int(dataset.__len__() * 0.8), dataset.__len__() -
                                                                  int(dataset.__len__() * 0.8)])
@@ -255,4 +259,8 @@ def getDictionary():
 if __name__ == "__main__":
     datasetx, datasety, _, _ = getTextUCMDataLoader()
     dataset = UCM_Captions(transform=None, ret_type="caption-caption")
-    vocab = dataset.vocab.stoi 
+    vocab = dataset.vocab.stoi
+    word_freq = dataset.vocab.freq
+    sorted_dict = dict(sorted(word_freq.items(), key=lambda item: item[1]))
+    plt.bar(list(sorted_dict.keys())[-20:], list(sorted_dict.values())[-20:])
+    plt.show()
