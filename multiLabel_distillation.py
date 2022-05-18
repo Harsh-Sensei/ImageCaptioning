@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 from fineTunedImageClassifier import *
 from textEncoder import TextEncoderDecoder
 from embeddingText_En_De import *
+from torch.utils.tensorboard import SummaryWriter
 from torch.nn.functional import normalize
 import time
-
 
 script_start_time = time.time()
 
@@ -25,9 +25,9 @@ torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate_img = 0.001
-learning_rate_text = 0.00001
+learning_rate_text = learning_rate_img/1000
 
-batch_size = 32
+batch_size = 16
 num_epochs = 20
 num_classes = 17
 feature_dim = 1000
@@ -40,6 +40,8 @@ vocab_size = 322  # to be defined after datasets are loaded
 dropout_p = 0.5
 teacher_force_ratio = 0.5
 pad_idx = 0
+
+writer = SummaryWriter(f"runs/distillation/model_summary_cosine")
 
 
 def getDataloaders(transform=None):
@@ -61,25 +63,30 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
 
-class Linear_same(nn.Module):
+
+class Linear_Proj(nn.Module):
     def __init__(self):
-        super(Linear_same, self).__init__()
-        self.linear = nn.Linear(2048, 2048)
+        super(Linear_Proj, self).__init__()
+        self.linear_p = nn.Linear(2048, 2048)
 
     def forward(self, x):
-        return self.linear(x)
+        return self.linear_p(x)
+
+
+
 
 class KL_MSE_Loss(nn.Module):
     def __init__(self):
         super(KL_MSE_Loss, self).__init__()
         self.kl_loss = nn.KLDivLoss()
         self.mse_loss = nn.MSELoss()
+        self.cosine = nn.CosineEmbeddingLoss()
 
     def forward(self, output, groundtruth):
-        loss1 = self.mse_loss(output, groundtruth)
+        # loss1 = self.mse_loss(output, groundtruth)
         # loss2 = self.kl_loss(groundtruth, output)
-
-        return loss1 #+ loss2
+        loss3 = self.cosine(output, groundtruth, torch.ones(output.shape[0]).to(device))
+        return loss3  # + loss2
 
 
 def primarytest(image_en, text_dec, dataloader, linear):
@@ -124,11 +131,13 @@ def labelsToEncoding(labels, text_model, vocabulary, label_to_string):
 
     return result
 
+
 def save_model(model, filename="./saved_models/distilled_image_encoder.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
-    print("Model saved : ./saved_models/distilled_image_encoder.pth.tar")
+    print("Model saved: ", filename)
     return None
+
 
 def img2txt(img_encoder, txt_decoder, dataloader, all=False, i=7):
     if all:
@@ -169,14 +178,14 @@ if __name__ == "__main__":
 
     # get dataloaders
     train_dataloader, test_dataloader, vocabulary = getDataloaders(preprocess)
-    print(f"Number of datapoints in training dataset(approx): {train_dataloader.__len__()*batch_size}")
-    print(f"Number of datapoints in test dataset(approx): {test_dataloader.__len__()*batch_size}")
+    print(f"Number of datapoints in training dataset(approx): {train_dataloader.__len__() * batch_size}")
+    print(f"Number of datapoints in test dataset(approx): {test_dataloader.__len__() * batch_size}")
     image_model = ResnetImageEncoder(num_classes=num_classes)
     image_model.load_state_dict(
         torch.load("./saved_models/multi_label_image_classifier_resnet_fine_tuned.pth.tar")['state_dict'])
     image_model = image_model.to(device)
 
-    image_model.classifier.fc = Identity()
+    image_model.classifier.fc = Linear_Proj().to(device)
     text_model = EmbeddingTextEncoderDecoder(embedding_dim=embedding_dim,
                                              en_hidden_size=en_hidden_size,
                                              num_layers=num_layers,
@@ -186,7 +195,7 @@ if __name__ == "__main__":
                                              p=dropout_p,
                                              teacher_force_ratio=teacher_force_ratio).to(device=device)
 
-    text_model.load_state_dict(torch.load("./saved_models/Embed_e_LSTM_d_LSTM_UCM.pth.tar")['state_dict'])
+    text_model.load_state_dict(torch.load("./saved_models/Embed_e_LSTM_d_LSTM_UCM_wo_embed_layer.pth.tar")['state_dict'])
     text_encoder_model = text_model.encoder.to(device)
 
     # text_encoder_model returns output, hidden_state, cell_state
@@ -207,6 +216,8 @@ if __name__ == "__main__":
 
     loss_vector = []
     outputs = []
+
+    step = 0
 
     for epoch in range(num_epochs):
         epoch_start_time = time.time()
@@ -230,13 +241,25 @@ if __name__ == "__main__":
             optimizer_img.step()
             optimizer_text.step()
 
+            # setting up tensorboard
+
+            writer.add_scalar('MSE loss', loss, global_step=step)
+            writer.add_histogram('FC_Classifier', image_model.classifier.fc.linear_p.weight)
+            if step % 100 == 0:
+                features = torch.cat((image_encoding, text_encoding_cell), dim=0)
+                class_labels = ['Image' if id < len(image_encoding) else 'Text' for id in range(len(image_encoding)
+                                                                                            + len(text_encoding_cell))]
+                writer.add_embedding(features, metadata=class_labels, global_step=step)
+            step += 1
+
         loss_vector.append(loss.item())
         print(f'Epoch:{epoch + 1},'
-              f' Loss:{loss.item():.4f}, Epoch time: {time.time()-epoch_start_time}')
+              f' Loss:{loss.item():.4f}, Epoch time: {time.time() - epoch_start_time}')
 
+    save_model(image_model)
+    save_model(text_encoder_model, filename="./saved_models/distilled_text_encoder.pth.tar")
     plt.plot(loss_vector, linestyle='--', marker='o', color='b')
     plt.xlabel("Epochs")
     plt.ylabel("Loss(MSE)")
     plt.show()
 
-    save_model(image_model)

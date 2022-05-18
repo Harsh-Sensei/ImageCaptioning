@@ -95,10 +95,9 @@ class EmbeddingTextDecoder(nn.Module):
         batch_size = captions.shape[0]
         target_len = captions.shape[1]
         hidden = cell.detach().clone().to(device)
-        # target_vocab_size = self.vocab_size
 
         outputs = torch.zeros(batch_size, target_len, self.vocab_size)
-        outputs[:, 0, 1] = torch.ones(batch_size, 1, 1)
+        outputs[:, 0, 1] = torch.ones(batch_size)
         caption_embed = self.dropout_layer(self.embed(captions))
         lstm_input = caption_embed[:, 0, :].unsqueeze(1)
         # caption_embed batch_size, seq_len, embed_dim
@@ -106,15 +105,16 @@ class EmbeddingTextDecoder(nn.Module):
         for t in range(1, target_len):
             output, (hidden, cell) = self.decoderLSTM(lstm_input, (hidden, cell))
 
-            # output dim = (batch_size, 1,vocab_size)
-            output_embedding = self.linear_embed_projection(output.squeeze(1))
+            # output dim = (batch_size, 1,hidden_size)
+            # output_embedding = self.linear_embed_projection(output.squeeze(1))
             output_vocab_probability = self.linear_vocab_projection(output.squeeze(1))
+            prediction_embed = self.embed(output_vocab_probability.argmax(dim=1))
             outputs[:, t, :] = output_vocab_probability
 
             if random.random() < self.teacher_force_ratio:
                 lstm_input = caption_embed[:, t, :].unsqueeze(1)
             else:
-                lstm_input = output_embedding.unsqueeze(1)
+                lstm_input = prediction_embed.unsqueeze(1)
 
         return outputs
 
@@ -122,7 +122,7 @@ class EmbeddingTextDecoder(nn.Module):
         hidden = cell.detach().clone()
 
         outputs = torch.zeros(batch_size, target_len, self.vocab_size).to(device)
-        outputs[:, 0, 1] = torch.ones(batch_size, 1, 1)
+        outputs[:, 0, 1] = torch.ones(batch_size)
         start_token = torch.ones(batch_size, 1).int().to(device)
         lstm_input = self.embed(start_token).to(device)
         # caption_embed batch_size, seq_len, embed_dim
@@ -131,12 +131,14 @@ class EmbeddingTextDecoder(nn.Module):
             output, (hidden, cell) = self.decoderLSTM(lstm_input, (hidden, cell))
             output = output.to(device)
             # output dim = (batch_size, 1, vocab_size)
-            output_embedding = self.linear_embed_projection(output.squeeze(1))
+            # output_embedding = self.linear_embed_projection(output.squeeze(1))
             output_vocab_probability = self.linear_vocab_projection(output.squeeze(1))
             outputs[:, t, :] = output_vocab_probability
+            prediction_embed = self.embed(output_vocab_probability.argmax(dim=1))
 
-            lstm_input = output_embedding.unsqueeze(1).to(device)
+            lstm_input = prediction_embed.unsqueeze(1).to(device)
 
+        outputs.to(device)
         return outputs
 
 
@@ -190,7 +192,7 @@ def test(dataloader, model, device, i=3):
     return None
 
 
-def save_model(model, filename="./saved_models/Embed_e_LSTM_d_LSTM_UCM.pth.tar"):
+def save_model(model, filename="./saved_models/Embed_e_LSTM_d_LSTM_UCM_wo_embed_layer.pth.tar"):
     state = {'state_dict': model.state_dict()}
     torch.save(state, filename)
 
@@ -210,6 +212,7 @@ if __name__ == "__main__":
                                         pad_idx=pad_idx,
                                         p=dropout_p,
                                         teacher_force_ratio=teacher_force_ratio).to(device=device)
+
 
     criterion = nn.CrossEntropyLoss(ignore_index=pad_idx)
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)

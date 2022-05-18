@@ -107,8 +107,6 @@ def evalF1Score(model, test_dataloader, threshold=0.6):
             # precision = true_pos/(true_pos + false_pos) = true_pos/(total_pos_pred)
             # reccall = true_pos/(true_pos + false_neg) = true_pos/(total_pos_targets)
 
-            # print(targets[2])
-            # print(predictions[2])
             predictions = predictions.flatten().float()
             targets = targets.flatten()
 
@@ -138,7 +136,8 @@ if __name__ == "__main__":
     # Hyper parameters
 
     batch_size = 32
-    num_epochs = 20
+    num_epochs_1 = 10
+    num_epochs_2 = 20
     num_classes = 17
 
     preprocess = transforms.Compose([
@@ -169,7 +168,7 @@ if __name__ == "__main__":
     loss_train = []
     loss_test = []
 
-    for epoch in range(num_epochs):
+    for epoch in range(num_epochs_1):
         for (data, ground_truth) in train_dataloader:
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
@@ -194,7 +193,7 @@ if __name__ == "__main__":
     for param in model.classifier.fc.parameters():
         param.requires_grad = True
 
-    for epoch in range(num_epochs):
+    for epoch in range(num_epochs_2):
         for (data, ground_truth) in train_dataloader:
             data = data.to(device=device)
             ground_truth = ground_truth.to(device=device)
@@ -209,13 +208,13 @@ if __name__ == "__main__":
             optimizer_fullyconnected.step()
         loss_train.append(loss.item())
 
-        print(f'Epoch:{num_epochs+epoch + 1},'
+        print(f'Epoch:{epoch + 1},'
               f' Loss:{loss.item():.4f}')
         evalF1Score(model, test_dataloader)
 
-        save_model(model)
-        plt.plot(loss_train)
-        plt.show()
+    save_model(model)
+    plt.plot(loss_train)
+    plt.show()
 
 
 
