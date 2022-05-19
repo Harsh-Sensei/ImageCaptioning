@@ -25,7 +25,7 @@ torch.manual_seed(17)
 
 # Hyper parameters
 learning_rate_img = 0.001
-learning_rate_text = learning_rate_img/1000
+learning_rate_text = learning_rate_img/100
 
 batch_size = 16
 num_epochs = 20
@@ -230,8 +230,8 @@ if __name__ == "__main__":
             text_encoding_cell = text_encoding_cell.permute(1, 0, 2).to(device=device)
             text_encoding_cell = text_encoding_cell.reshape(text_encoding_cell.shape[0], -1)
 
-            # image_encoding = normalize(image_encoding, p=2, dim=1)
-            # text_encoding_cell = normalize(text_encoding_cell, p=2, dim=1)
+            image_encoding = normalize(image_encoding, p=2, dim=1)
+            text_encoding_cell = normalize(text_encoding_cell, p=2, dim=1)
 
             loss = criterion(image_encoding, text_encoding_cell)
 

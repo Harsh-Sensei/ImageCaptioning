@@ -22,7 +22,7 @@ torch.manual_seed(17)
 # Hyper parameters
 learning_rate = 0.001
 batch_size = 16
-num_epochs = 20
+num_epochs = 10
 num_classes = 17
 feature_dim = 1000
 
@@ -56,6 +56,14 @@ class Identity(nn.Module):
 
     def forward(self, x):
         return x
+
+class Linear_Proj(nn.Module):
+    def __init__(self):
+        super(Linear_Proj, self).__init__()
+        self.linear_p = nn.Linear(2048, 2048)
+
+    def forward(self, x):
+        return self.linear_p(x)
 
 
 def primarytest(image_en, text_dec, dataloader, linear):
@@ -108,7 +116,7 @@ def save_model(model, filename="./saved_models/image_encoder_downstream.pth.tar"
     return None
 
 
-def img2txt(img_encoder, txt_decoder, dataloader, itos, all=False, i=7):
+def img2txt(img_encoder, txt_decoder, dataloader, itos, all=False, i=7, show_img=False):
     if all:
         for (img_data, captions) in dataloader:
             img_encoding = img_encoder(img_data)
@@ -128,13 +136,17 @@ def img2txt(img_encoder, txt_decoder, dataloader, itos, all=False, i=7):
         output = txt_decoder.inference(img_encoding, 1)
         output = output.squeeze(0)
         output = output.argmax(1)
-        cv.imshow("Input Image", input_img)
 
         print("Predicted")
         print([itos[int(e)] for e in output.tolist()])
 
         print("Ground Truth")
         print([itos[int(e)] for e in captions.tolist()])
+
+        if show_img:
+            cv.imshow("Input Image", input_img)
+            cv.waitKey(0)
+            cv.destroyAllWindows()
 
         return output, captions
 
@@ -155,7 +167,7 @@ if __name__ == "__main__":
     image_model = ResnetImageEncoder(num_classes=num_classes)
 
     image_model = image_model.to(device)
-    image_model.classifier.fc = Identity()
+    image_model.classifier.fc = Linear_Proj().to(device)
     image_model.load_state_dict(
         torch.load("./saved_models/distilled_image_encoder.pth.tar")['state_dict'])
 
@@ -224,4 +236,4 @@ if __name__ == "__main__":
     cv.waitKey(0)
     # closing all open windows
     cv.destroyAllWindows()
-    img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos)
+    img2txt(image_model, text_model.decoder, test_dataloader, vocabulary.itos, show_img=True)
